@@ -1,6 +1,6 @@
 # org-task-scheduler.el
 
-This package provides automated task scheduling and deadline tracking in Org Mode.
+This package scans Org files to identify upcoming and missed scheduled/deadline tasks based on configured criteria.
 
 ## Features
 
