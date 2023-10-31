@@ -60,3 +60,6 @@ Contributions are welcome! Please open issues or submit pull requests.
 ## License
 
 This package is licensed under the GPL 3.0 License. See LICENSE for details.
+
+##  Read more
+- [Why did I create this?](https://note.jsntn.com/org-task-scheduler.html)
