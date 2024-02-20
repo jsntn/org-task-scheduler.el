@@ -57,6 +57,9 @@ SCHEDULE (default: 10:00).")
   "Default time for the tasks when no explicit time is specified in
 DEADLINE (default: 16:00).")
 
+(defvar org-task-scheduler/inherit-tags t
+  "Inherit tags or not (default: t).")
+
 (defvar org-task-scheduler/included-tags '()
   "Define the list of tags used to identify tasks to scan.
 
@@ -168,7 +171,9 @@ org-task-scheduler/tasks."
          (with-current-buffer (find-file-noselect file)
            (org-map-entries
             (lambda ()
-	      (let ((entry-tags (org-get-tags nil t))
+	      (let ((entry-tags (org-get-tags nil
+					      ;; see org-get-tags for the reason to the `not ...` below,
+					      (not org-task-scheduler/inherit-tags)))
 		    (todo-keyword (org-get-todo-state)))
                 (when (or (null included-tags) ; include all entries when included-tags is empty
                           (cl-loop for tag in included-tags
