@@ -168,53 +168,54 @@ org-task-scheduler/tasks."
     (make-thread
      (lambda ()
        (dolist (file agenda-files)
-         (with-current-buffer (find-file-noselect file)
-           (org-map-entries
-            (lambda ()
-	      (let ((entry-tags (org-get-tags nil
-					      ;; see org-get-tags for the reason to the `not ...` below,
-					      (not org-task-scheduler/inherit-tags)))
-		    (todo-keyword (org-get-todo-state)))
-                (when (or (null included-tags) ; include all entries when included-tags is empty
-                          (cl-loop for tag in included-tags
-                                   thereis (member tag entry-tags)))
-		  (when (or (null exclued-tags) ; exclude nothing when exclued-tags is empty
-			    (not (cl-loop for tag in exclued-tags
-					  thereis (member tag entry-tags))))
-		    ;; check if the TODO keyword is included
-		    (when (or (null included-todo-keywords)
-			      (member todo-keyword included-todo-keywords))
-		      ;; check if the TODO keyword is excluded
-		      (when (or (null excluded-todo-keywords)
-				(not (member todo-keyword excluded-todo-keywords)))
-			;; check if any of the excluded entry properties match
-		      (when (or (null excluded-entry-properties)
-				(not (cl-loop for (property . value) in excluded-entry-properties
-					      thereis (and (string= (org-entry-get nil property) value)))))
-			;; check if any of the included entry properties match
-			(when (or (null included-entry-properties)
-				  (cl-loop for (property . value) in included-entry-properties
-					   thereis (and (string= (org-entry-get nil property) value))))
-		      (let ((task-name (org-get-heading t))
-			    (schedule-date
-			     (org-task-scheduler/set-default-time-if-no-time
-			      (org-task-scheduler/remove-repeater-string-from-time
-			       (org-entry-get nil "SCHEDULED"))
-			      org-task-scheduler/default-schedule-time))
-			    (deadline-date
-			     (org-task-scheduler/set-default-time-if-no-time
-			      (org-task-scheduler/remove-repeater-string-from-time
-			       (org-entry-get nil "DEADLINE"))
-			      org-task-scheduler/default-deadline-time))
-			    ;; (properties (org-entry-properties))
-			    )
-			(push (list :task-name task-name
-				    :schedule-date schedule-date
-				    :deadline-date deadline-date
-				    ;; :properties properties
+	 (when (file-exists-p file) ; in case of non-existent agenda file...
+	   (with-current-buffer (find-file-noselect file)
+	     (org-map-entries
+	      (lambda ()
+		(let ((entry-tags (org-get-tags nil
+						;; see org-get-tags for the reason to the `not ...` below,
+						(not org-task-scheduler/inherit-tags)))
+		      (todo-keyword (org-get-todo-state)))
+		  (when (or (null included-tags) ; include all entries when included-tags is empty
+			    (cl-loop for tag in included-tags
+				     thereis (member tag entry-tags)))
+		    (when (or (null exclued-tags) ; exclude nothing when exclued-tags is empty
+			      (not (cl-loop for tag in exclued-tags
+					    thereis (member tag entry-tags))))
+		      ;; check if the TODO keyword is included
+		      (when (or (null included-todo-keywords)
+				(member todo-keyword included-todo-keywords))
+			;; check if the TODO keyword is excluded
+			(when (or (null excluded-todo-keywords)
+				  (not (member todo-keyword excluded-todo-keywords)))
+			  ;; check if any of the excluded entry properties match
+			  (when (or (null excluded-entry-properties)
+				    (not (cl-loop for (property . value) in excluded-entry-properties
+						  thereis (and (string= (org-entry-get nil property) value)))))
+			    ;; check if any of the included entry properties match
+			    (when (or (null included-entry-properties)
+				      (cl-loop for (property . value) in included-entry-properties
+					       thereis (and (string= (org-entry-get nil property) value))))
+			      (let ((task-name (org-get-heading t))
+				    (schedule-date
+				     (org-task-scheduler/set-default-time-if-no-time
+				      (org-task-scheduler/remove-repeater-string-from-time
+				       (org-entry-get nil "SCHEDULED"))
+				      org-task-scheduler/default-schedule-time))
+				    (deadline-date
+				     (org-task-scheduler/set-default-time-if-no-time
+				      (org-task-scheduler/remove-repeater-string-from-time
+				       (org-entry-get nil "DEADLINE"))
+				      org-task-scheduler/default-deadline-time))
+				    ;; (properties (org-entry-properties))
 				    )
-			      org-task-scheduler/tasks)))))))))
-            nil 'file))))
+				(push (list :task-name task-name
+					    :schedule-date schedule-date
+					    :deadline-date deadline-date
+					    ;; :properties properties
+					    )
+				      org-task-scheduler/tasks)))))))))
+		nil 'file)))))
        "org-task-scheduler-scan-thread"))))
 
 (defun org-task-scheduler/sort-lines ()
