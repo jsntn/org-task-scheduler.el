@@ -13,6 +13,11 @@
 (defvar org-task-scheduler/buffer "*Alerts*"
   "Name of the buffer to display the alert entries.")
 
+(defvar org-task-scheduler/enable-links nil
+  "Whether to make task entries clickable links to their source.
+When nil (default), tasks are displayed as plain text.
+When t, tasks become clickable links that jump to the source location.")
+
 (defvar org-task-scheduler/minutes-to-schedule-time 30
   "Time to schedule time in minutes (default: 30 minutes).
 
@@ -207,13 +212,13 @@ org-task-scheduler/tasks."
 				      (org-task-scheduler/remove-repeater-string-from-time
 				       (org-entry-get nil "DEADLINE"))
 				      org-task-scheduler/default-deadline-time))
-				    ;; (properties (org-entry-properties))
-				    )
+				    (file-path (buffer-file-name))
+				    (marker (point-marker)))
 				(push (list :task-name task-name
 					    :schedule-date schedule-date
 					    :deadline-date deadline-date
-					    ;; :properties properties
-					    )
+					    :file file-path
+					    :marker marker)
 				      org-task-scheduler/tasks)))))))))
 		nil 'file)))))
        "org-task-scheduler-scan-thread"))))
@@ -255,6 +260,63 @@ Usage:
 		(/ minutes 60)))))
 	  ".1f"))
 
+(defun org-task-scheduler/escape-link-text (text)
+  "Escape special characters in TEXT for safe inclusion inside Org links.
+Escapes the following:
+  - `[` and `]` to prevent bracket confusion
+  - `|` to prevent link target/description splitting
+  - `\\` to preserve literal backslashes"
+  (let ((escaped text))
+    ;; Escape backslash first
+    (setq escaped (replace-regexp-in-string "\\\\" "\\\\\\\\" escaped))
+    ;; Escape [ and ]
+    (setq escaped (replace-regexp-in-string "[][]" "\\\\\\&" escaped))
+    ;; Escape |
+    (setq escaped (replace-regexp-in-string "|" "\\\\|" escaped))
+    escaped))
+
+(defun org-task-scheduler/escape-link-text (text)
+  "Escape special characters in TEXT for safe inclusion inside Org links.
+Escapes the following:
+  - `[` and `]` to prevent bracket confusion
+  - `|` to prevent link target/description splitting
+  - `\\` to preserve literal backslashes"
+  (let ((escaped text))
+    ;; Escape backslash first
+    (setq escaped (replace-regexp-in-string "\\\\" "\\\\\\\\" escaped))
+    ;; Escape [ and ]
+    (setq escaped (replace-regexp-in-string "[][]" "\\\\\\&" escaped))
+    ;; Escape |
+    (setq escaped (replace-regexp-in-string "|" "\\\\|" escaped))
+    escaped))
+
+(defun org-task-scheduler/insert-task-entry (prefix time-str task)
+  "Insert a task entry as a literal Org link.
+PREFIX is the category string (e.g., 'Missed Deadline by').
+TIME-STR is the formatted time string.
+TASK is the task plist containing task information.
+
+The link target is escaped, but the display text remains unchanged."
+  (let* ((task-name (plist-get task :task-name))
+         (file (plist-get task :file))
+         (marker (plist-get task :marker))
+         ;; Clean headline for the link target: no TODO, no priority, no tags
+         (link-target
+          (if (and file marker (file-exists-p file))
+              (with-current-buffer (find-file-noselect file)
+                (goto-char marker)
+                (org-task-scheduler/escape-link-text
+                 (org-get-heading t t t))) ; remove tags, todo, priority
+            (org-task-scheduler/escape-link-text task-name)))
+         ;; Display text: exact original headline (not escaped)
+         (link-display task-name))
+    (insert
+     (if org-task-scheduler/enable-links
+         (format "%s %s: [[file:%s::*%s][%s]]\n"
+                 prefix time-str file link-target link-display)
+       (format "%s %s: %s\n"
+               prefix time-str task-name)))))
+
 (defun org-task-scheduler/check-tasks ()
   "Filter tasks based on schedule and deadline criteria and
 categorize them based on conditions in dedicated Org Mode
@@ -268,9 +330,9 @@ buffer."
 	    org-task-scheduler/minutes-to-deadline-cutoff
 	    org-task-scheduler/minutes-to-schedule-time)
 	   ))
-         (tasks org-task-scheduler/tasks)
-         (org-buffer (get-buffer org-task-scheduler/buffer))
-         (tasks-categorized nil)) ; flag to track if any tasks were categorized
+	 (tasks org-task-scheduler/tasks)
+	 (org-buffer (get-buffer org-task-scheduler/buffer))
+	 (tasks-categorized nil)) ; flag to track if any tasks were categorized
 
     ;; create a new buffer if it doesn't exist
     (unless org-buffer
@@ -293,56 +355,60 @@ buffer."
                                   (org-time-string-to-time deadline-date-str)
                                 nil))
                (time-diff-schedule (if schedule-date
-                                      (/ (- (float-time schedule-date) (float-time current-time)) 60)
-                                    nil))
+                                       (/ (- (float-time schedule-date) (float-time current-time)) 60)
+                                     nil))
                (time-diff-deadline (if deadline-date
-                                      (/ (- (float-time deadline-date) (float-time current-time)) 60)
-                                    nil)))
+                                       (/ (- (float-time deadline-date) (float-time current-time)) 60)
+                                     nil)))
 
           ;; check conditions independently for each task
 	  (if (and deadline-date (<= (abs time-diff-deadline) org-task-scheduler/minutes-past-deadline-cutoff) (< time-diff-deadline 0))
 	      ;; check if the entry missed deadline then insert
 	      (progn
-		(insert (format "Missed Deadline by %s Hours: %s\n"
-				(format lead-time-format (/ (abs time-diff-deadline) 60))
-				(plist-get task :task-name)))
+                (org-task-scheduler/insert-task-entry
+                 "Missed Deadline by"
+                 (format (concat lead-time-format " Hours") (/ (abs time-diff-deadline) 60))
+                 task)
 		(setq tasks-categorized t))
 	    ;; otherwise (if the entry didn't miss deadline), check if it missed
 	    ;; schedule then insert
 	    (when (and schedule-date (<= (abs time-diff-schedule) org-task-scheduler/minutes-past-schedule-time) (< time-diff-schedule 0))
 	      (progn
-		(insert (format "Missed Schedule by %s Hours: %s\n"
-				(format lead-time-format (/ (abs time-diff-schedule) 60))
-				(plist-get task :task-name)))
+                (org-task-scheduler/insert-task-entry
+                 "Missed Schedule by"
+                 (format (concat lead-time-format " Hours") (/ (abs time-diff-schedule) 60))
+                 task)
 		(setq tasks-categorized t)))
 	    )
 
           (when (and deadline-date (>= time-diff-deadline 0) (<= time-diff-deadline org-task-scheduler/minutes-to-deadline-cutoff))
-              (progn
-		(insert (format "Upcmng Deadline in %s Hours: %s\n"
-				(format lead-time-format (/ time-diff-deadline 60))
-				(plist-get task :task-name)))
-                (setq tasks-categorized t)))
+            (progn
+              (org-task-scheduler/insert-task-entry
+               "Upcmng Deadline in"
+               (format (concat lead-time-format " Hours") (/ time-diff-deadline 60))
+               task)
+              (setq tasks-categorized t)))
 
           (when (and schedule-date (>= time-diff-schedule 0) (<= time-diff-schedule org-task-scheduler/minutes-to-schedule-time))
-              (progn
-		(insert (format "Upcmng Schedule in %s Hours: %s\n"
-				(format lead-time-format (/ time-diff-schedule 60))
-				(plist-get task :task-name)))
-                (setq tasks-categorized t))))))
+            (progn
+              (org-task-scheduler/insert-task-entry
+               "Upcmng Schedule in"
+               (format (concat lead-time-format " Hours") (/ time-diff-schedule 60))
+               task)
+              (setq tasks-categorized t))))))
 
-      ;; display the Org Mode buffer if tasks were categorized
-      (if tasks-categorized
-          (progn
-            (pop-to-buffer org-buffer)
-            (org-task-scheduler/sort-lines)
-	    (goto-char (point-max))
-            (when (functionp 'org-task-scheduler/reminder-action)
-              (org-task-scheduler/reminder-action))
-            (message "Tasks categorized in the dedicated Org Mode buffer (%s)." org-task-scheduler/buffer))
-        ;; if no tasks matched, delete the buffer and raise a message
-        (kill-buffer org-buffer)
-        (message "No tasks meet the missed and upcoming time criteria."))))
+    ;; display the Org Mode buffer if tasks were categorized
+    (if tasks-categorized
+        (progn
+          (pop-to-buffer org-buffer)
+          (org-task-scheduler/sort-lines)
+	  (goto-char (point-max))
+          (when (functionp 'org-task-scheduler/reminder-action)
+            (org-task-scheduler/reminder-action))
+          (message "Tasks categorized in the dedicated Org Mode buffer (%s)." org-task-scheduler/buffer))
+      ;; if no tasks matched, delete the buffer and raise a message
+      (kill-buffer org-buffer)
+      (message "No tasks meet the missed and upcoming time criteria."))))
 
 
 (provide 'org-task-scheduler)
