@@ -275,21 +275,6 @@ Escapes the following:
     (setq escaped (replace-regexp-in-string "|" "\\\\|" escaped))
     escaped))
 
-(defun org-task-scheduler/escape-link-text (text)
-  "Escape special characters in TEXT for safe inclusion inside Org links.
-Escapes the following:
-  - `[` and `]` to prevent bracket confusion
-  - `|` to prevent link target/description splitting
-  - `\\` to preserve literal backslashes"
-  (let ((escaped text))
-    ;; Escape backslash first
-    (setq escaped (replace-regexp-in-string "\\\\" "\\\\\\\\" escaped))
-    ;; Escape [ and ]
-    (setq escaped (replace-regexp-in-string "[][]" "\\\\\\&" escaped))
-    ;; Escape |
-    (setq escaped (replace-regexp-in-string "|" "\\\\|" escaped))
-    escaped))
-
 (defun org-task-scheduler/insert-task-entry (prefix time-str task)
   "Insert a task entry as a literal Org link.
 PREFIX is the category string (e.g., 'Missed Deadline by').
