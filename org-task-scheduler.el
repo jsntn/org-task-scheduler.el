@@ -1,7 +1,7 @@
 ;;; org-task-scheduler.el --- The Org Task Scheduler -*- lexical-binding: t -*-
 
 ;; Author: Jason Tian <hi@jsntn.com>
-;; Version: 0.1.0
+;; Version: 0.1.1
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: gtd
 ;; URL: https://github.com/jsntn/org-task-scheduler.el
@@ -108,6 +108,31 @@ org-task-scheduler/check-tasks function."
   ;; (w32-shell-execute "open" "v:/06ac7fa7d842b75be23726222d9c0217.jpg")
   )
 
+(defun org-task-scheduler/remove-progress-cookie (heading)
+  "Remove progress cookies like [75%] or [2/5] from HEADING only if at the end.
+Returns the heading without trailing progress cookies."
+  (if heading
+      (let ((result heading))
+	;; Remove percentage cookies like [75%] ONLY at the end
+	(setq result (replace-regexp-in-string "[ \t]*\\[\\([0-9]+\\)%\\][ \t]*$" "" result))
+	;; Remove fraction cookies like [2/5] ONLY at the end
+	(setq result (replace-regexp-in-string "[ \t]*\\[\\([0-9]+\\)/\\([0-9]+\\)\\][ \t]*$" "" result))
+	result)
+    heading))
+
+(defun org-task-scheduler/extract-progress-for-display (heading)
+  "Extract progress cookies from HEADING and format for display.
+Converts [75%] to '75%' and [2/5] to '2/5' without brackets.
+Returns the heading with progress formatted for display."
+  (if heading
+      (let ((result heading))
+	;; Replace [75%] with just 75% at the end
+	(setq result (replace-regexp-in-string "[ \t]*\\[\\([0-9]+%\\)\\][ \t]*$" " \\1" result))
+	;; Replace [2/5] with just 2/5 at the end
+	(setq result (replace-regexp-in-string "[ \t]*\\[\\([0-9]+/[0-9]+\\)\\][ \t]*$" " \\1" result))
+	result)
+    heading))
+
 (defun org-task-scheduler/filtered-agenda-files ()
   "Return a filtered list of agenda files based on inclusion and exclusion criteria.
 
@@ -202,6 +227,8 @@ org-task-scheduler/tasks."
 				      (cl-loop for (property . value) in included-entry-properties
 					       thereis (and (string= (org-entry-get nil property) value))))
 			      (let ((task-name (org-get-heading t))
+				    (task-name-clean (org-task-scheduler/remove-progress-cookie (org-get-heading t)))
+				    (task-name-display (org-task-scheduler/extract-progress-for-display (org-get-heading t)))
 				    (schedule-date
 				     (org-task-scheduler/set-default-time-if-no-time
 				      (org-task-scheduler/remove-repeater-string-from-time
@@ -215,6 +242,8 @@ org-task-scheduler/tasks."
 				    (file-path (buffer-file-name))
 				    (marker (point-marker)))
 				(push (list :task-name task-name
+					    :task-name-clean task-name-clean
+					    :task-name-display task-name-display
 					    :schedule-date schedule-date
 					    :deadline-date deadline-date
 					    :file file-path
@@ -283,24 +312,27 @@ TASK is the task plist containing task information.
 
 The link target is escaped, but the display text remains unchanged."
   (let* ((task-name (plist-get task :task-name))
+         (task-name-clean (plist-get task :task-name-clean))
+         (task-name-display (plist-get task :task-name-display))
          (file (plist-get task :file))
          (marker (plist-get task :marker))
-         ;; Clean headline for the link target: no TODO, no priority, no tags
+         ;; Clean headline for the link target: no TODO, no priority, no tags, no progress cookie
          (link-target
           (if (and file marker (file-exists-p file))
               (with-current-buffer (find-file-noselect file)
                 (goto-char marker)
                 (org-task-scheduler/escape-link-text
-                 (org-get-heading t t t))) ; remove tags, todo, priority
-            (org-task-scheduler/escape-link-text task-name)))
-         ;; Display text: exact original headline (not escaped)
-         (link-display task-name))
+                 (org-task-scheduler/remove-progress-cookie
+                  (org-get-heading t t t)))) ; remove tags, todo, priority, then progress cookie
+            (org-task-scheduler/escape-link-text task-name-clean)))
+         ;; Display text: with progress formatted (e.g., "Release 75%")
+         (link-display task-name-display))
     (insert
      (if org-task-scheduler/enable-links
          (format "%s %s: [[file:%s::*%s][%s]]\n"
                  prefix time-str file link-target link-display)
        (format "%s %s: %s\n"
-               prefix time-str task-name)))))
+               prefix time-str task-name-display)))))
 
 (defun org-task-scheduler/check-tasks ()
   "Filter tasks based on schedule and deadline criteria and
